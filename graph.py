@@ -1,12 +1,12 @@
 import click
 from google.cloud import bigquery
 
-uni1 = '' # Your uni
-uni2 = '' # Partner's uni. If you don't have a partner, put None
+uni1 = 'yq2247' # Your uni
+uni2 = 'gq2138' # Partner's uni. If you don't have a partner, put None
 
 # Test function
 def testquery(client):
-    q = """select * from `w4111-columbia.graph.tweets` limit 3"""
+    q = """select * from dataset.Graph` limit 3"""
     job = client.query(q)
 
     # waits for query to execute and return
@@ -16,32 +16,57 @@ def testquery(client):
 # SQL query for Question 1. You must edit this funtion.
 # This function should return a list of IDs and the corresponding text.
 def q1(client):
-
-    return []
+    q1 = """
+       select id, text from `w4111-columbia.graph.tweets`where text like "%going live%" and text like "%www.twitch%"
+        """
+    job = client.query(q1)
+    results = job.result()
+    return list(results)
 
 # SQL query for Question 2. You must edit this funtion.
 # This function should return a list of days and their corresponding average likes.
 def q2(client):
-
-    return []
+    q2 = """
+       select substr(create_time,1,3),avg(like_num) from `w4111-columbia.graph.tweets` group by substr(create_time,1,3) order by avg(like_num) DESC limit 1
+        """
+    job = client.query(q2)
+    results = job.result()
+    return list(results)
 
 # SQL query for Question 3. You must edit this funtion.
 # This function should return a list of source nodes and destination nodes in the graph.
 def q3(client):
-
-    return []
+    q3 = """
+       CREATE TABLE if not exists dataset.Graph AS \
+       select distinct twitter_username as src,REGEXP_EXTRACT(text, r"@+([a-zA-Z0-9-]+)") as dst\
+         from  (select twitter_username, text from `w4111-columbia.graph.tweets` where text like "%@%") \
+       """
+    job = client.query(q3)
+    results = job.result()
+    return list(results)
 
 # SQL query for Question 4. You must edit this funtion.
 # This function should return a list containing the twitter username of the users having the max indegree and max outdegree.
 def q4(client):
-
-    return []
+    q4 = """
+    select a.indegree, b.outdegree \
+    from \
+      (select count(src) as indegree from dataset.Graph group by dst order by count(src) DESC limit 1) as a,
+      (select count(dst) as outdegree from dataset.Graph group by src order by count(dst) DESC limit 1) as b
+      """
+    job = client.query(q4)
+    results = job.result()
+    return list(results)
 
 # SQL query for Question 5. You must edit this funtion.
 # This function should return a list containing value of the conditional probability.
 def q5(client):
-
-    return []
+    q5 = """
+    select twitter_username, like_num from `w4111-columbia.graph.tweets` avg(like_num) limit 1 
+      """
+    job = client.query(q5)
+    results = job.result()
+    return list(results)
 
 # SQL query for Question 6. You must edit this funtion.
 # This function should return a list containing the value for the number of triangles in the graph.
@@ -61,7 +86,7 @@ def bfs(client, start, n_iter):
 
     # You should replace dataset.bfs_graph with your dataset name and table name.
     q1 = """
-        CREATE TABLE IF NOT EXISTS dataset.bfs_graph (src string, dst string);
+       select * from `w4111-columbia.graph.tweets` limit 3
         """
     q2 = """
         INSERT INTO dataset.bfs_graph(src, dst) VALUES
@@ -154,7 +179,7 @@ def main(pathtocred):
     client = bigquery.Client.from_service_account_json(pathtocred)
 
     #funcs_to_test = [q1, q2, q3, q4, q5, q6, q7]
-    funcs_to_test = [testquery]
+    funcs_to_test = [q5]
     for func in funcs_to_test:
         rows = func(client)
         print ("\n====%s====" % func.__name__)
