@@ -110,18 +110,48 @@ def q6(client):
 
 # SQL query for Question 7. You must edit this funtion.
 # This function should return a list containing the twitter username and their corresponding PageRank.
-def q7(client,start):
+def q7(client):
     #Out Degree
-    q71 = "create or replace table dataset.outdegree as (select count(dst) as outdegree from dataset.Graph group by src)"
+    q71 = "create or replace table dataset.outdegree as (select src,count(distinct dst) as outdegree from dataset.Graph group by src)"
     
     #Initialize
     q72 = """
-        CREATE OR REPLACE TABLE dataset.distances AS
-        SELECT '{start}' as node, 1/(select count (distinct twitter_username) from `w4111-columbia.graph.tweets`) as pagerank
-        """.format(start=start)
-
-#    job = client.query(q71)
+        CREATE OR REPLACE TABLE dataset.pagerank AS
+        SELECT distinct twitter_username as node, FORMAT("%.8f",1/ (select count (distinct twitter_username) from `w4111-columbia.graph.tweets`)) as pagerank
+        from  `w4111-columbia.graph.tweets` 
+        """
     job = client.query(q72)
+
+    #get p(u)/L
+    for i in range(20):
+        q73 = """
+        create or replace table dataset.tmp as 
+        (select g.dst,FORMAT("%.8f",sum(cast(pv.pv as numeric))) as tmpsum 
+        from dataset.Graph as g,(
+        select FORMAT("%.8f", (cast (p.pagerank as numeric))/o.outdegree) as pv, p.node\
+        from dataset.pagerank as p, dataset.outdegree as o \
+        where p.node = o.src
+        ) as pv
+        where pv.node = g.src
+        group by g.dst)
+        """
+        q74 ="""
+        create or replace table dataset.pagerank2 as (
+        select p.node, t.tmpsum as pagerank
+        from dataset.pagerank as p left join dataset.tmp as t
+        on p.node = t.dst)
+        """
+        # select p.node, if(t.tmpsum is null, p.pagerank,t.tmpsum) as pagerank
+ 
+        print(i)
+        job = client.query(q73)
+        #job = client.query(q74)
+
+    q75 = """select p.node, p.pagerank from dataset.pagerank as p order by cast(p.pagerank as numeric) desc limit 10"""
+#    job = client.query(q71)
+#    job = client.query(q72)
+#    job = client.query(q73)
+#    job = client.query(q75)
     results = job.result()
     return list(results)
 
@@ -226,7 +256,7 @@ def main(pathtocred):
     #funcs_to_test = [q1, q2, q3, q4, q5, q6, q7]
     funcs_to_test = [q7]
     for func in funcs_to_test:
-        rows = func(client,'Askren')
+        rows = func(client)
         print ("\n====%s====" % func.__name__)
         print(rows)
 
