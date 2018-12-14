@@ -62,23 +62,68 @@ def q4(client):
 # This function should return a list containing value of the conditional probability.
 def q5(client):
     q5 = """
-    select twitter_username, like_num from `w4111-columbia.graph.tweets` avg(like_num) limit 1 
+    create table if not exists dataset.unpopular as (\
+    select distinct w.twitter_username  from `w4111-columbia.graph.tweets` as w,  (select dst, count(src) as indegree from dataset.Graph group by dst ) as i\
+            where w.like_num < (select avg(like_num) from `w4111-columbia.graph.tweets`) \
+                and w.twitter_username = i.dst and \
+                i.indegree < (select avg(indegree) from (select dst, count(src) as indegree from dataset.Graph group by dst ))
+                )
       """
-    job = client.query(q5)
+    q51 = """select * from dataset.unpopular limit 1"""
+    #Popular
+    q52 = """
+    create table if not exists dataset.popular as (\
+    select distinct w.twitter_username  from `w4111-columbia.graph.tweets` as w,  (select dst, count(src) as indegree from dataset.Graph group by dst ) as i\
+            where w.like_num >= (select avg(like_num) from `w4111-columbia.graph.tweets`) \
+                and w.twitter_username = i.dst and \
+                i.indegree >= (select avg(indegree) from (select dst, count(src) as indegree from dataset.Graph group by dst ))
+                )
+      """
+    q53 = """select * from dataset.unpopular limit 3""" 
+    # distinct ?
+    q54 = """
+        select count(distinct g.src)/(select count(twitter_username) from dataset.unpopular) from dataset.unpopular as u, dataset.popular as p, dataset.Graph as g \
+        where u.twitter_username = g.src and p.twitter_username = g.dst 
+        """
+#    job = client.query(q5)
+#    job = client.query(q51)
+#    job = client.query(q52)
+#    job = client.query(q53)
+    job = client.query(q54)
     results = job.result()
     return list(results)
 
 # SQL query for Question 6. You must edit this funtion.
 # This function should return a list containing the value for the number of triangles in the graph.
 def q6(client):
-
-    return []
+    q6 ="""
+    with number as (
+    select distinct g1.src, g2.src, g3.src \
+    from dataset.Graph as g1, dataset.Graph as g2, dataset.Graph as g3 \
+    where g1.dst = g2.src and g2.dst = g3.src and g3.dst = g1.src
+    )
+    select count(*) from number
+    """
+    job = client.query(q6)
+    results = job.result()
+    return list(results)
 
 # SQL query for Question 7. You must edit this funtion.
 # This function should return a list containing the twitter username and their corresponding PageRank.
-def q7(client):
+def q7(client,start):
+    #Out Degree
+    q71 = "create or replace table dataset.outdegree as (select count(dst) as outdegree from dataset.Graph group by src)"
+    
+    #Initialize
+    q72 = """
+        CREATE OR REPLACE TABLE dataset.distances AS
+        SELECT '{start}' as node, 1/(select count (distinct twitter_username) from `w4111-columbia.graph.tweets`) as pagerank
+        """.format(start=start)
 
-    return []
+#    job = client.query(q71)
+    job = client.query(q72)
+    results = job.result()
+    return list(results)
 
 
 # Do not edit this function. This is for helping you develop your own iterative PageRank algorithm.
@@ -86,7 +131,7 @@ def bfs(client, start, n_iter):
 
     # You should replace dataset.bfs_graph with your dataset name and table name.
     q1 = """
-       select * from `w4111-columbia.graph.tweets` limit 3
+        CREATE TABLE IF NOT EXISTS dataset.bfs_graph (src string, dst string);
         """
     q2 = """
         INSERT INTO dataset.bfs_graph(src, dst) VALUES
@@ -179,9 +224,9 @@ def main(pathtocred):
     client = bigquery.Client.from_service_account_json(pathtocred)
 
     #funcs_to_test = [q1, q2, q3, q4, q5, q6, q7]
-    funcs_to_test = [q5]
+    funcs_to_test = [q7]
     for func in funcs_to_test:
-        rows = func(client)
+        rows = func(client,'Askren')
         print ("\n====%s====" % func.__name__)
         print(rows)
 
