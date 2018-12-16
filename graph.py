@@ -37,10 +37,14 @@ def q2(client):
 # This function should return a list of source nodes and destination nodes in the graph.
 def q3(client):
     q3 = """
-       CREATE TABLE if not exists dataset.Graph AS \
-       select distinct twitter_username as src,REGEXP_EXTRACT(text, r"@+([a-zA-Z0-9-]+)") as dst\
-         from  (select twitter_username, text from `w4111-columbia.graph.tweets` where text like "%@%") \
-       """
+         CREATE or replace TABLE  dataset.Graph AS
+         select distinct twitter_username as src,REGEXP_EXTRACT(text, r"@([^\s]+)") as dst,text\
+         from  (select twitter_username, text from `w4111-columbia.graph.tweets` where text like "%@%") 
+        
+    """
+#  where REGEXP_EXTRACT(text, r"@+([a-zA-Z0-9-_]+)") <> twitter_username and  REGEXP_EXTRACT(text, r"@+([a-zA-Z0-9-_.]+)") is not null
+ 
+# CREATE TABLE if not exists dataset.Graph AS \
     job = client.query(q3)
     results = job.result()
     return list(results)
@@ -69,7 +73,7 @@ def q5(client):
                 i.indegree < (select avg(indegree) from (select dst, count(src) as indegree from dataset.Graph group by dst ))
                 )
       """
-    q51 = """select * from dataset.unpopular limit 1"""
+#    q51 = """select * from dataset.unpopular limit 1"""
     #Popular
     q52 = """
     create table if not exists dataset.popular as (\
@@ -79,16 +83,20 @@ def q5(client):
                 i.indegree >= (select avg(indegree) from (select dst, count(src) as indegree from dataset.Graph group by dst ))
                 )
       """
-    q53 = """select * from dataset.unpopular limit 3""" 
+#    q53 = """select * from dataset.unpopular limit 3""" 
     # distinct ?
     q54 = """
         select count(distinct g.src)/(select count(twitter_username) from dataset.unpopular) from dataset.unpopular as u, dataset.popular as p, dataset.Graph as g \
         where u.twitter_username = g.src and p.twitter_username = g.dst 
         """
-#    job = client.query(q5)
+    job = client.query(q5)
+    job.result()
 #    job = client.query(q51)
-#    job = client.query(q52)
+#    job.result()
+    job = client.query(q52)
+    job.result()
 #    job = client.query(q53)
+#    job.result()
     job = client.query(q54)
     results = job.result()
     return list(results)
@@ -102,7 +110,7 @@ def q6(client):
     from dataset.Graph as g1, dataset.Graph as g2, dataset.Graph as g3 \
     where g1.dst = g2.src and g2.dst = g3.src and g3.dst = g1.src
     )
-    select count(*) from number
+    select count(*)/3 from number
     """
     job = client.query(q6)
     results = job.result()
@@ -114,44 +122,68 @@ def q7(client):
     #Out Degree
     q71 = "create or replace table dataset.outdegree as (select src,count(distinct dst) as outdegree from dataset.Graph group by src)"
     
+    job = client.query(q71)
+    job.result()
+
+    #in Degree
+    q715 = "create or replace table dataset.indegree as (select dst,count(distinct src) as indegree from dataset.Graph group by dst)"
+    
+    job = client.query(q715)
+    job.result()
+ 
+    #Create Node
+    q725 ="""CREATE OR REPLACE TABLE dataset.nodes AS
+    SELECT src from dataset.Graph 
+    union distinct 
+    SELECT dst from dataset.Graph """
+    job = client.query(q725)
+    job.result()
+
+
+
     #Initialize
     q72 = """
         CREATE OR REPLACE TABLE dataset.pagerank AS
-        SELECT distinct twitter_username as node, FORMAT("%.8f",1/ (select count (distinct twitter_username) from `w4111-columbia.graph.tweets`)) as pagerank
-        from  `w4111-columbia.graph.tweets` 
+        SELECT src as node,1/(select count(*) from dataset.nodes) as pagerank
+        from dataset.nodes
         """
     job = client.query(q72)
+    job.result()
 
-    #get p(u)/L
-    for i in range(20):
+    #get p(u)/
+    ite = 20
+    print(ite)
+    for i in range(ite):
+        #caculate pv/L
         q73 = """
-        create or replace table dataset.tmp as 
-        (select g.dst,FORMAT("%.8f",sum(cast(pv.pv as numeric))) as tmpsum 
+            create or replace table dataset.hope as
+            select FORMAT("%.15f", (cast (p.pagerank as numeric))/o.outdegree) as pv, p.node\
+            from dataset.pagerank as p, dataset.outdegree as o \
+            where p.node = o.src
+             """
+        job = client.query(q73)
+        job.result()
+
+        q735 = """
+        create or replace table dataset.pagerank as 
+        (select g.dst as node, FORMAT("%.15f",sum(cast(pv.pv as numeric))) as pagerank 
         from dataset.Graph as g,(
-        select FORMAT("%.8f", (cast (p.pagerank as numeric))/o.outdegree) as pv, p.node\
-        from dataset.pagerank as p, dataset.outdegree as o \
-        where p.node = o.src
-        ) as pv
+            select FORMAT("%.15f", (cast (p.pagerank as numeric))/o.outdegree) as pv, p.node\
+            from dataset.pagerank as p, dataset.outdegree as o \
+            where p.node = o.src
+            ) as pv
         where pv.node = g.src
         group by g.dst)
         """
-        q74 ="""
-        create or replace table dataset.pagerank2 as (
-        select p.node, t.tmpsum as pagerank
-        from dataset.pagerank as p left join dataset.tmp as t
-        on p.node = t.dst)
-        """
-        # select p.node, if(t.tmpsum is null, p.pagerank,t.tmpsum) as pagerank
+       # select p.node, if(t.tmpsum is null, p.pagerank,t.tmpsum) as pagerank
  
         print(i)
-        job = client.query(q73)
-        #job = client.query(q74)
+        job = client.query(q735)
+        results = job.result()
+        
 
-    q75 = """select p.node, p.pagerank from dataset.pagerank as p order by cast(p.pagerank as numeric) desc limit 10"""
-#    job = client.query(q71)
-#    job = client.query(q72)
-#    job = client.query(q73)
-#    job = client.query(q75)
+    q75 = """select p.node, p.pagerank from dataset.pagerank as p order by cast(p.pagerank as numeric) desc limit 100"""
+    job = client.query(q75)
     results = job.result()
     return list(results)
 
