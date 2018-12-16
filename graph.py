@@ -42,9 +42,6 @@ def q3(client):
          from  (select twitter_username, text from `w4111-columbia.graph.tweets` where text like "%@%") 
         
     """
-#  where REGEXP_EXTRACT(text, r"@+([a-zA-Z0-9-_]+)") <> twitter_username and  REGEXP_EXTRACT(text, r"@+([a-zA-Z0-9-_.]+)") is not null
- 
-# CREATE TABLE if not exists dataset.Graph AS \
     job = client.query(q3)
     results = job.result()
     return list(results)
@@ -66,7 +63,7 @@ def q4(client):
 # This function should return a list containing value of the conditional probability.
 def q5(client):
     q5 = """
-    create table if not exists dataset.unpopular as (\
+    create or replace table dataset.unpopular as (\
     select distinct w.twitter_username  from `w4111-columbia.graph.tweets` as w,  (select dst, count(src) as indegree from dataset.Graph group by dst ) as i\
             where w.like_num < (select avg(like_num) from `w4111-columbia.graph.tweets`) \
                 and w.twitter_username = i.dst and \
@@ -76,7 +73,7 @@ def q5(client):
 #    q51 = """select * from dataset.unpopular limit 1"""
     #Popular
     q52 = """
-    create table if not exists dataset.popular as (\
+    create or replace table  dataset.popular as (\
     select distinct w.twitter_username  from `w4111-columbia.graph.tweets` as w,  (select dst, count(src) as indegree from dataset.Graph group by dst ) as i\
             where w.like_num >= (select avg(like_num) from `w4111-columbia.graph.tweets`) \
                 and w.twitter_username = i.dst and \
@@ -86,7 +83,7 @@ def q5(client):
 #    q53 = """select * from dataset.unpopular limit 3""" 
     # distinct ?
     q54 = """
-        select count(distinct g.src)/(select count(twitter_username) from dataset.unpopular) from dataset.unpopular as u, dataset.popular as p, dataset.Graph as g \
+        select count(distinct g.src)/(select count(distinct  twitter_username) from dataset.unpopular) from dataset.unpopular as u, dataset.popular as p, dataset.Graph as g \
         where u.twitter_username = g.src and p.twitter_username = g.dst 
         """
     job = client.query(q5)
@@ -104,10 +101,19 @@ def q5(client):
 # SQL query for Question 6. You must edit this funtion.
 # This function should return a list containing the value for the number of triangles in the graph.
 def q6(client):
+    q60 = """
+         CREATE or replace TABLE  dataset.Graph2 AS
+         select distinct twitter_username as src,REGEXP_EXTRACT(text, r"@([^\s]+)") as dst\
+         from  (select twitter_username, text from `w4111-columbia.graph.tweets` where text like "%@%")  
+         where twitter_username <> REGEXP_EXTRACT(text, r"@([^\s]+)")
+    """
+    job = client.query(q60)
+    job.result()
+
     q6 ="""
     with number as (
     select distinct g1.src, g2.src, g3.src \
-    from dataset.Graph as g1, dataset.Graph as g2, dataset.Graph as g3 \
+    from dataset.Graph2 as g1, dataset.Graph2 as g2, dataset.Graph2 as g3 \
     where g1.dst = g2.src and g2.dst = g3.src and g3.dst = g1.src
     )
     select count(*)/3 from number
@@ -286,7 +292,7 @@ def main(pathtocred):
     client = bigquery.Client.from_service_account_json(pathtocred)
 
     #funcs_to_test = [q1, q2, q3, q4, q5, q6, q7]
-    funcs_to_test = [q7]
+    funcs_to_test = [q5]
     for func in funcs_to_test:
         rows = func(client)
         print ("\n====%s====" % func.__name__)
