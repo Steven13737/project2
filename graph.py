@@ -1,6 +1,5 @@
 import click
 from google.cloud import bigquery
-import pandas as pd
 
 uni1 = 'yq2247' # Your uni
 uni2 = 'gq2138' # Partner's uni. If you don't have a partner, put None
@@ -292,11 +291,10 @@ def save_table():
 def main(pathtocred):
     client = bigquery.Client.from_service_account_json(pathtocred)
 
-    #funcs_to_test = [q1, q2, q3, q4, q5, q6, q7]
-    funcs_to_test =[q7]
+    funcs_to_test = [q1, q2, q3, q4, q5, q6, q7]
+    #funcs_to_test =[q7]
     for func in funcs_to_test:
         rows = func(client)
-        rows = pd.DataFrame(rows)
         print ("\n====%s====" % func.__name__)
         print(rows)
 
