@@ -1,5 +1,6 @@
 import click
 from google.cloud import bigquery
+import pandas as pd
 
 uni1 = 'yq2247' # Your uni
 uni2 = 'gq2138' # Partner's uni. If you don't have a partner, put None
@@ -38,9 +39,9 @@ def q2(client):
 def q3(client):
     q3 = """
          CREATE or replace TABLE  dataset.Graph AS
-         select distinct twitter_username as src,REGEXP_EXTRACT(text, r"@([^\s]+)") as dst,text\
-         from  (select twitter_username, text from `w4111-columbia.graph.tweets` where text like "%@%") 
-        
+         select distinct twitter_username as src,REGEXP_EXTRACT(text, r"@([\S]+)") as dst\
+         from  (select twitter_username, text from `w4111-columbia.graph.tweets`)
+         where REGEXP_EXTRACT(text, r"@([\S]+)") is not null 
     """
     job = client.query(q3)
     results = job.result()
@@ -50,10 +51,10 @@ def q3(client):
 # This function should return a list containing the twitter username of the users having the max indegree and max outdegree.
 def q4(client):
     q4 = """
-    select a.indegree, b.outdegree \
+    select a.dst,b.src \
     from \
-      (select count(src) as indegree from dataset.Graph group by dst order by count(src) DESC limit 1) as a,
-      (select count(dst) as outdegree from dataset.Graph group by src order by count(dst) DESC limit 1) as b
+      (select dst,count(src) as indegree from dataset.Graph group by dst order by count(src) DESC limit 1) as a,
+      (select src,count(dst) as outdegree from dataset.Graph group by src order by count(dst) DESC limit 1) as b
       """
     job = client.query(q4)
     results = job.result()
@@ -62,28 +63,39 @@ def q4(client):
 # SQL query for Question 5. You must edit this funtion.
 # This function should return a list containing value of the conditional probability.
 def q5(client):
+
+    q51 = """
+        create or replace table dataset.avglike as 
+        select w.twitter_username, avg(w.like_num) as like_num from `w4111-columbia.graph.tweets` as w group by w.twitter_username
+        """
+    job = client.query(q51)
+    job.result()
+
+    #Unpopular Table
     q5 = """
-    create or replace table dataset.unpopular as (\
-    select distinct w.twitter_username  from `w4111-columbia.graph.tweets` as w,  (select dst, count(src) as indegree from dataset.Graph group by dst ) as i\
-            where w.like_num < (select avg(like_num) from `w4111-columbia.graph.tweets`) \
-                and w.twitter_username = i.dst and \
-                i.indegree < (select avg(indegree) from (select dst, count(src) as indegree from dataset.Graph group by dst ))
-                )
+    create or replace table dataset.unpopular as (
+    select distinct w.twitter_username  from dataset.avglike as w,  (select dst, count(src) as indegree from dataset.Graph group by dst ) as i
+            where w.like_num < (select avg(like_num) from `w4111-columbia.graph.tweets`) 
+                    and w.twitter_username = i.dst 
+                    and i.indegree < (select avg(indegree) from (select dst, count(src) as indegree from dataset.Graph group by dst ))
+    )
       """
 #    q51 = """select * from dataset.unpopular limit 1"""
-    #Popular
+    
+    #Popular Table
     q52 = """
-    create or replace table  dataset.popular as (\
-    select distinct w.twitter_username  from `w4111-columbia.graph.tweets` as w,  (select dst, count(src) as indegree from dataset.Graph group by dst ) as i\
-            where w.like_num >= (select avg(like_num) from `w4111-columbia.graph.tweets`) \
-                and w.twitter_username = i.dst and \
-                i.indegree >= (select avg(indegree) from (select dst, count(src) as indegree from dataset.Graph group by dst ))
-                )
+    create or replace table  dataset.popular as (
+    select distinct w.twitter_username  from dataset.avglike as w,  (select dst, count(src) as indegree from dataset.Graph group by dst ) as i
+            where w.like_num >= (select avg(like_num) from `w4111-columbia.graph.tweets`) 
+                    and w.twitter_username = i.dst 
+                    and i.indegree >= (select avg(indegree) from (select dst, count(src) as indegree from dataset.Graph group by dst ))
+    )
       """
 #    q53 = """select * from dataset.unpopular limit 3""" 
     # distinct ?
     q54 = """
-        select count(distinct g.src)/(select count(distinct  twitter_username) from dataset.unpopular) from dataset.unpopular as u, dataset.popular as p, dataset.Graph as g \
+        select count( g.src)/(select count(  twitter_username) from dataset.unpopular) 
+        from dataset.unpopular as u, dataset.popular as p, dataset.Graph as g 
         where u.twitter_username = g.src and p.twitter_username = g.dst 
         """
     job = client.query(q5)
@@ -103,9 +115,9 @@ def q5(client):
 def q6(client):
     q60 = """
          CREATE or replace TABLE  dataset.Graph2 AS
-         select distinct twitter_username as src,REGEXP_EXTRACT(text, r"@([^\s]+)") as dst\
-         from  (select twitter_username, text from `w4111-columbia.graph.tweets` where text like "%@%")  
-         where twitter_username <> REGEXP_EXTRACT(text, r"@([^\s]+)")
+         select distinct twitter_username as src,REGEXP_EXTRACT(text, r"@([\S]+)") as dst\
+         from  (select twitter_username, text from `w4111-columbia.graph.tweets`)  
+         where twitter_username <> REGEXP_EXTRACT(text, r"@([\S]+)") and REGEXP_EXTRACT(text, r"@([\S]+)") is not null 
     """
     job = client.query(q60)
     job.result()
@@ -139,9 +151,9 @@ def q7(client):
  
     #Create Node
     q725 ="""CREATE OR REPLACE TABLE dataset.nodes AS
-    SELECT src from dataset.Graph 
+    SELECT distinct src from dataset.Graph 
     union distinct 
-    SELECT dst from dataset.Graph """
+    SELECT distinct dst from dataset.Graph """
     job = client.query(q725)
     job.result()
 
@@ -156,39 +168,28 @@ def q7(client):
     job = client.query(q72)
     job.result()
 
-    #get p(u)/
     ite = 20
     print(ite)
     for i in range(ite):
-        #caculate pv/L
-        q73 = """
-            create or replace table dataset.hope as
-            select FORMAT("%.15f", (cast (p.pagerank as numeric))/o.outdegree) as pv, p.node\
-            from dataset.pagerank as p, dataset.outdegree as o \
-            where p.node = o.src
-             """
-        job = client.query(q73)
-        job.result()
 
         q735 = """
         create or replace table dataset.pagerank as 
-        (select g.dst as node, FORMAT("%.15f",sum(cast(pv.pv as numeric))) as pagerank 
+        (select g.dst as node, FORMAT("%.15f",sum(cast(pv.pv as float64))) as pagerank 
         from dataset.Graph as g,(
-            select FORMAT("%.15f", (cast (p.pagerank as numeric))/o.outdegree) as pv, p.node\
+            select FORMAT("%.15f", (cast (p.pagerank as float64))/o.outdegree) as pv, p.node\
             from dataset.pagerank as p, dataset.outdegree as o \
             where p.node = o.src
             ) as pv
         where pv.node = g.src
         group by g.dst)
         """
-       # select p.node, if(t.tmpsum is null, p.pagerank,t.tmpsum) as pagerank
  
-        print(i)
+        print("step",i)
         job = client.query(q735)
         results = job.result()
         
 
-    q75 = """select p.node, p.pagerank from dataset.pagerank as p order by cast(p.pagerank as numeric) desc limit 100"""
+    q75 = """select p.node, p.pagerank from dataset.pagerank as p order by cast(p.pagerank as float64) desc limit 100"""
     job = client.query(q75)
     results = job.result()
     return list(results)
@@ -292,9 +293,10 @@ def main(pathtocred):
     client = bigquery.Client.from_service_account_json(pathtocred)
 
     #funcs_to_test = [q1, q2, q3, q4, q5, q6, q7]
-    funcs_to_test = [q5]
+    funcs_to_test =[q7]
     for func in funcs_to_test:
         rows = func(client)
+        rows = pd.DataFrame(rows)
         print ("\n====%s====" % func.__name__)
         print(rows)
 
